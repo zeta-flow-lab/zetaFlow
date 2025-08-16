@@ -5,18 +5,13 @@ import {
   Rocket, Bot, Shield, ChevronDown, ChevronRight, KeyRound, Globe
 } from "lucide-react";
 
-// 导入新创建的组件
-import Header from "./components/Header";
-import Footer from "./components/Footer";
-import Chat from "./components/Chat";
-
 /**
 * ZetaFlow — 多语言 + 动效版
 * 本次更新：
-* 1) 英雄标题（英文）加入打字机动画；结束后高亮色"."持续闪烁
+* 1) 英雄标题（英文）加入打字机动画；结束后高亮色“.”持续闪烁
 * 2) 链标签增加左→右的平行动画轮播（优雅、可无障碍降级）
-* 3) 语言切换修复：提升层级到 z-[70]，纯色背景避免"重影"，确保在英雄标题之上
-* 4) "Cmd/K 打开命令面板"改为"打开命令面板"，点击即弹出命令面板
+* 3) 语言切换修复：提升层级到 z-[70]，纯色背景避免“重影”，确保在英雄标题之上
+* 4) “Cmd/K 打开命令面板”改为“打开命令面板”，点击即弹出命令面板
 * 其余保持不变
 */
 
@@ -195,8 +190,7 @@ const I18N: Record<Lang, any> = {
       copied: "已复制到剪贴板",
     },
     msgs: {
-      create: (n: string) =>
-        `将为你在 ${n || "ZetaChain"} 上创建智能账户（演示）。`,
+      create: (n: string) => `将为你在 ${n || "ZetaChain"} 上创建智能账户（演示）。`,
       swap: (amt: any, from: string, to: string, s?: string, d?: string) =>
         `准备将 ${amt ?? "?"} ${from} 兑换为 ${to}（${s || "?"} → ${d || "?"}）。`,
       balance: (token?: string, chain?: string) =>
@@ -503,11 +497,57 @@ export default function ZetaFlow() {
   const [lang, setLang] = useState<Lang>("en");
   const STR = I18N[lang];
 
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([
+    { role: "assistant", text: I18N.en.chat.initial }, // 默认英文
+  ]);
+  const [busy, setBusy] = useState(false);
+
   const [swapOpen, setSwapOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [commandPreview, setCommandPreview] = useState<Action | null>(null);
 
   const { toasts, push, remove } = useToasts();
+
+  useEffect(() => {
+    setCommandPreview(input ? parseCommand(input) : null);
+  }, [input]);
+
+  async function handleSend() {
+    if (!input.trim()) return;
+    const action = parseCommand(input);
+    setMessages((m) => [...m, { role: "user", text: input }]);
+    setInput("");
+    setBusy(true);
+    await sleep(480);
+
+    switch (action.type) {
+      case "create_wallet": {
+        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.create(action.network || "ZetaChain") }]);
+        setCreateOpen(true);
+        push({ icon: <Shield size={16} />, text: STR.toasts.createDemo });
+        break;
+      }
+      case "swap": {
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", text: STR.msgs.swap(action.amount, action.from, action.to, action.srcChain, action.dstChain) },
+        ]);
+        setSwapOpen(true);
+        push({ icon: <ArrowLeftRight size={16} />, text: STR.toasts.swapDemo });
+        break;
+      }
+      case "balance": {
+        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.balance(action.token, action.chain) }]);
+        break;
+      }
+      default: {
+        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.fallback }]);
+      }
+    }
+    setBusy(false);
+  }
 
   function copy(text: string) {
     navigator.clipboard?.writeText(text);
@@ -530,13 +570,34 @@ export default function ZetaFlow() {
 
       <BackgroundOrbs />
 
-      {/* 使用 Header 组件 */}
-      <Header 
-        lang={lang} 
-        setLang={setLang} 
-        onConnectWallet={() => setConnectOpen(true)} 
-        i18n={I18N} 
-      />
+      {/* 顶栏 —— 提升层级，确保下拉在英雄标题之上 */}
+      <header className="relative isolate z-[60] mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: theme.accent + "26" }}>
+            <Rocket style={{ color: theme.green }} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-semibold tracking-tight" style={{ color: theme.text }}>ZetaFlow</span>
+              <Tag label="Hackathon Preview" color={theme.subtext} />
+            </div>
+            <div className="text-xs" style={{ color: theme.subtext }}>{STR.header.tagline}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* 将语言切换器放到原“命令面板”按钮的位置 */}
+          <LanguageSwitcher lang={lang} onChange={setLang} />
+
+          <button
+            className="rounded-xl px-3 py-2 text-sm font-medium"
+            style={{ background: theme.accent, color: theme.text }}
+            onClick={() => setConnectOpen(true)}
+          >
+            <div className="flex items-center gap-1"><Wallet size={16} /> {STR.header.connect}</div>
+          </button>
+        </div>
+      </header>
 
       {/* 英雄区 */}
       <main className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-28 pt-6">
@@ -578,14 +639,69 @@ export default function ZetaFlow() {
           </div>
         </div>
 
-        {/* 使用 Chat 组件 */}
-        <Chat 
-          i18n={I18N} 
-          lang={lang} 
-          onCreateWallet={() => setCreateOpen(true)} 
-          onSwap={() => setSwapOpen(true)} 
-          onShowToast={(text, icon) => push({ icon: icon || <ArrowLeftRight size={16} />, text })} 
-        />
+        {/* 会话卡片（放宽） */}
+        <GlassCard className="mx-auto w-full max-w-4xl p-2 md:p-3">
+          <div className="relative rounded-2xl border p-3 md:p-6" style={{ borderColor: theme.line }}>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <Bot size={18} />
+                </div>
+                <div className="text-sm font-medium" style={{ color: theme.text }}>{STR.chat.title}</div>
+              </div>
+              <div className="flex items-center gap-2 text-xs" style={{ color: theme.subtext }}>
+                <Shield size={14} /> {STR.chat.badge}
+              </div>
+            </div>
+
+            <div className="mb-4 h-[38vh] max-h-[420px] overflow-y-auto pr-1">
+              <ChatList messages={messages} />
+            </div>
+
+            {/* 输入区 */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 rounded-2xl border px-3 py-2 md:px-4 md:py-3"
+                style={{ borderColor: theme.line, background: "rgba(255,255,255,0.03)" }}>
+                <KeyRound size={18} className="opacity-80" />
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  placeholder={STR.chat.placeholder}
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:opacity-60"
+                  style={{ color: theme.text }}
+                />
+                <button
+                  onClick={handleSend}
+                  className="group inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60"
+                  disabled={busy}
+                  style={{ background: theme.accent, color: theme.text }}
+                >
+                  <Send size={16} className={busy ? "animate-pulse" : ""} /> {STR.chat.send}
+                </button>
+              </div>
+
+              {/* 即时解析预览 */}
+              <AnimatePresence>
+                {commandPreview && commandPreview.type !== "unknown" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="flex items-center gap-2 text-xs"
+                    style={{ color: theme.subtext }}
+                  >
+                    <ChevronRight size={14} />
+                    <span>{STR.chat.parsedAs}</span>
+                    <code className="rounded-md px-2 py-1" style={{ background: "rgba(255,255,255,0.06)", color: theme.text }}>
+                      {JSON.stringify(commandPreview)}
+                    </code>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </GlassCard>
 
         {/* 三列优势 */}
         <div className="mx-auto mt-10 grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-3">
@@ -595,11 +711,9 @@ export default function ZetaFlow() {
         </div>
       </main>
 
-      {/* 使用 Footer 组件 */}
-      <Footer i18n={I18N} lang={lang} />
-
-      {/* Toasts */}
-      <Toasts list={toasts} onClose={remove} />
+      <footer className="relative z-10 mx-auto w-full max-w-7xl px-6 pb-14 text-xs" style={{ color: theme.subtext }}>
+        <div className="opacity-80">ZetaFlow © 2025 · Demo UI · Inspired by ZetaChain brand ethos</div>
+      </footer>
 
       {/* 模态：连接钱包 */}
       <Modal open={connectOpen} onClose={() => setConnectOpen(false)} title={STR.connectModal.title}>
@@ -660,6 +774,86 @@ export default function ZetaFlow() {
   );
 }
 
+/* ====== 子组件 ====== */
+
+function LanguageSwitcher({ lang, onChange }: { lang: Lang; onChange: (l: Lang) => void }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!boxRef.current) return;
+      if (!boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    // 提升容器层级，避免被英雄标题覆盖
+    <div className="relative z-[70]" ref={boxRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm"
+        style={{ borderColor: theme.line, background: "rgba(255,255,255,0.06)", color: theme.text }}
+      >
+        <Globe size={16} />
+        {LANG_LABEL[lang]}
+        <ChevronDown size={16} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            // 面板再抬高一层，并使用纯色背景避免“重影”
+            className="absolute right-0 z-[80] mt-2 w-44 overflow-hidden rounded-xl border"
+            style={{ borderColor: theme.line, background: theme.bg, boxShadow: "0 12px 30px rgba(0,0,0,.45)" }}
+          >
+            {(["en", "zh", "ko", "ja"] as Lang[]).map((l) => (
+              <button
+                type="button"
+                key={l}
+                onClick={() => { onChange(l); setOpen(false); }}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:opacity-100"
+                style={{ color: theme.text, opacity: lang === l ? 1 : 0.85 }}
+              >
+                {LANG_LABEL[l]}
+                {lang === l && <Check size={16} />}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ChatList({ messages }: { messages: { role: "user" | "assistant"; text: string }[] }) {
+  return (
+    <div className="space-y-3">
+      {messages.map((m, i) => (
+        <motion.div key={i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+          <div className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm md:px-4 md:py-3 ${m.role === "user" ? "rounded-br-sm" : "rounded-bl-sm"}`}
+              style={{
+                background: m.role === "user" ? theme.accent : "rgba(255,255,255,0.06)",
+                color: theme.text
+              }}
+            >
+              <pre className="whitespace-pre-wrap break-words font-sans leading-relaxed">{m.text}</pre>
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 function FeatureCard({ icon, title, desc, tag }: { icon: React.ReactNode; title: string; desc: string; tag: string }) {
   return (
     <GlassCard className="p-4">
@@ -679,6 +873,42 @@ function FeatureCard({ icon, title, desc, tag }: { icon: React.ReactNode; title:
   );
 }
 
+function Select({ label, options }: { label: string; options: { value: string; label: string }[] }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(options[0]?.value);
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div className="space-y-1">
+      <div className="text-xs opacity-80" style={{ color: theme.subtext }}>{label}</div>
+      <div className="relative">
+        <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between rounded-xl border px-3 py-2"
+          style={{ borderColor: theme.line, background: "rgba(255,255,255,0.04)", color: theme.text }}>
+          <span>{selected?.label}</span>
+          <ChevronDown size={16} />
+        </button>
+        <AnimatePresence>
+          {open && (
+            <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+              className="absolute z-10 mt-2 w-full overflow-hidden rounded-xl border"
+              style={{ borderColor: theme.line, background: theme.bg }}>
+              {options.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => { setValue(o.value); setOpen(false); }}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:opacity-100"
+                  style={{ color: theme.text, opacity: selected?.value === o.value ? 1 : 0.8 }}
+                >
+                  {o.label}
+                  {selected?.value === o.value && <Check size={16} />}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
 
 function SwapForm({ onClose, STR }: { onClose: () => void; STR: any }) {
   const [fromToken, setFromToken] = useState("ETH");
