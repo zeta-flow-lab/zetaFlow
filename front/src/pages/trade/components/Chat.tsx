@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Shield, KeyRound, Send, ChevronRight } from "lucide-react";
+import { sendChatMessage } from "../../../api/oneRouter";
 
 // Theme object - consider moving to a shared file later
 const theme = {
@@ -106,6 +107,7 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
   ]);
   const [busy, setBusy] = useState(false);
   const [commandPreview, setCommandPreview] = useState<Action | null>(null);
+  const [useAI, setUseAI] = useState(true); // Set AI mode to be active by default
 
   useEffect(() => {
     setCommandPreview(input ? parseCommand(input) : null);
@@ -113,37 +115,58 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
 
   async function handleSend() {
     if (!input.trim()) return;
+    const userMessage = input;
     const action = parseCommand(input);
-    setMessages((m) => [...m, { role: "user", text: input }]);
+    
+    // Add user message to chat
+    setMessages((m) => [...m, { role: "user", text: userMessage }]);
     setInput("");
     setBusy(true);
-    await sleep(480);
+    
+    try {
+      // Check if we should use AI or command parsing
+      if (useAI) {
+        // Use OneRouter API for AI responses
+        // Add explicit type assertion to ensure type safety
+        const currentMessages = [...messages, { role: "user" as const, text: userMessage }];
+        const aiResponse = await sendChatMessage(currentMessages);
+        
+        setMessages((m) => [...m, { role: "assistant", text: aiResponse }]);
+      } else {
+        // Use command parsing (existing functionality)
+        await sleep(480);
 
-    switch (action.type) {
-      case "create_wallet": {
-        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.create(action.network || "ZetaChain") }]);
-        onCreateWallet();
-        onShowToast(STR.toasts.createDemo);
-        break;
+        switch (action.type) {
+          case "create_wallet": {
+            setMessages((m) => [...m, { role: "assistant", text: STR.msgs.create(action.network || "ZetaChain") }]);
+            onCreateWallet();
+            onShowToast(STR.toasts.createDemo);
+            break;
+          }
+          case "swap": {
+            setMessages((m) => [
+              ...m,
+              { role: "assistant", text: STR.msgs.swap(action.amount, action.from, action.to, action.srcChain, action.dstChain) },
+            ]);
+            onSwap();
+            onShowToast(STR.toasts.swapDemo);
+            break;
+          }
+          case "balance": {
+            setMessages((m) => [...m, { role: "assistant", text: STR.msgs.balance(action.token, action.chain) }]);
+            break;
+          }
+          default: {
+            setMessages((m) => [...m, { role: "assistant", text: STR.msgs.fallback }]);
+          }
+        }
       }
-      case "swap": {
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", text: STR.msgs.swap(action.amount, action.from, action.to, action.srcChain, action.dstChain) },
-        ]);
-        onSwap();
-        onShowToast(STR.toasts.swapDemo);
-        break;
-      }
-      case "balance": {
-        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.balance(action.token, action.chain) }]);
-        break;
-      }
-      default: {
-        setMessages((m) => [...m, { role: "assistant", text: STR.msgs.fallback }]);
-      }
+    } catch (error) {
+      console.error("Error in chat:", error);
+      setMessages((m) => [...m, { role: "assistant", text: "Sorry, I encountered an error. Please try again." }]);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   return (
@@ -156,8 +179,20 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
             </div>
             <div className="text-sm font-medium" style={{ color: theme.text }}>{STR.chat.title}</div>
           </div>
-          <div className="flex items-center gap-2 text-xs" style={{ color: theme.subtext }}>
-            <Shield size={14} /> {STR.chat.badge}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setUseAI(!useAI)} 
+              className="rounded-lg px-2 py-1 text-xs"
+              style={{ 
+                background: useAI ? theme.accent : "rgba(255,255,255,0.06)",
+                color: theme.text 
+              }}
+            >
+              {useAI ? "AI Mode" : "Command Mode"}
+            </button>
+            <div className="text-xs" style={{ color: theme.subtext }}>
+              <Shield size={14} /> {STR.chat.badge}
+            </div>
           </div>
         </div>
 
