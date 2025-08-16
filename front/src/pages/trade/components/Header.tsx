@@ -2,9 +2,8 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Rocket, Sparkles, Wallet, Check, Globe, ChevronDown } from "lucide-react";
 import { useRef, useEffect } from "react";
+import {type Lang} from "../utils/languageUtils";
 
-// Import theme and language types from a shared file
-// You might want to move these to a separate file later
 const theme = {
   bg: "#0B0B0E",
   surface: "rgba(255,255,255,0.06)",
@@ -18,7 +17,6 @@ const theme = {
   danger: "#FF5C7C",
 };
 
-type Lang = "en" | "zh" | "ko" | "ja";
 
 const LANG_LABEL: Record<Lang, string> = {
   en: "English",
@@ -37,7 +35,6 @@ function Tag({ label, color = theme.subtext }: { label: string; color?: string }
   );
 }
 
-// Language switcher component
 function LanguageSwitcher({ lang, onChange }: { lang: Lang; onChange: (l: Lang) => void }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
