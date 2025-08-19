@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Rocket, Sparkles, Wallet, Check, Globe, ChevronDown } from "lucide-react";
+import { Rocket, Sparkles, Check, Globe, ChevronDown } from "lucide-react";
 import { useRef, useEffect } from "react";
-import {type Lang} from "../utils/languageUtils";
+import { type Lang } from "../utils/languageUtils";
+import WalletButton from "../../../components/WalletButton";
 
 const theme = {
   bg: "#0B0B0E",
@@ -93,13 +94,13 @@ function LanguageSwitcher({ lang, onChange }: { lang: Lang; onChange: (l: Lang) 
 interface HeaderProps {
   lang: Lang;
   setLang: (lang: Lang) => void;
-  onConnectWallet: () => void;
+  onConnectWallet?: () => void; // 现在可选，因为 WalletButton 自己处理连接
   i18n: any;
 }
 
 export default function Header({ lang, setLang, onConnectWallet, i18n }: HeaderProps) {
   const STR = i18n[lang];
-  
+
   return (
     <header className="relative isolate z-[60] mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-5">
       <div className="flex items-center gap-3">
@@ -117,14 +118,11 @@ export default function Header({ lang, setLang, onConnectWallet, i18n }: HeaderP
 
       <div className="flex items-center gap-2">
         <LanguageSwitcher lang={lang} onChange={setLang} />
-
-        <button
-          className="rounded-xl px-3 py-2 text-sm font-medium"
-          style={{ background: theme.accent, color: theme.text }}
-          onClick={onConnectWallet}
-        >
-          <div className="flex items-center gap-1"><Wallet size={16} /> {STR.header.connect}</div>
-        </button>
+        <WalletButton
+          size="md"
+          variant="primary"
+          onConnected={onConnectWallet}
+        />
       </div>
     </header>
   );
