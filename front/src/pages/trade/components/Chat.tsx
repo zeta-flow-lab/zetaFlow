@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, Shield, KeyRound, Send, ChevronRight } from "lucide-react";
+import { Bot, Shield, KeyRound, Send, ChevronRight, PieChart } from "lucide-react";
 import { sendChatMessage } from "../../../api/oneRouter";
+import { parseIntent, type ParsedIntent, type RebalanceIntent } from "../../../lib/intent-parser";
+import { generatePlan, validatePlan, formatPlanSummary, type ExecutablePlan } from "../../../lib/plan-generator";
 
 // Theme object - consider moving to a shared file later
 const theme = {
@@ -49,9 +51,9 @@ function ChatList({ messages }: { messages: { role: "user" | "assistant"; text: 
   );
 }
 
-// Helper function to parse commands
+// Helper function to parse commands (extended)
 type Action = {
-  type: "create_wallet" | "swap" | "balance" | "unknown";
+  type: "create_wallet" | "swap" | "balance" | "rebalance" | "unknown";
   network?: string;
   amount?: number;
   from?: string;
@@ -60,28 +62,41 @@ type Action = {
   chain?: string;
   srcChain?: string;
   dstChain?: string;
+  intent?: RebalanceIntent;
+  plan?: ExecutablePlan;
 };
 
 function parseCommand(input: string): Action {
-  input = input.toLowerCase();
-  
-  if (/创建|create|wallet/.test(input)) {
-    const network = input.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
+  const normalizedInput = input.toLowerCase();
+
+  // 使用新的意图解析器
+  const parsedIntent = parseIntent(input);
+
+  if (parsedIntent.type === "rebalance") {
+    return {
+      type: "rebalance",
+      intent: parsedIntent as RebalanceIntent
+    };
+  }
+
+  // 保留原有的解析逻辑作为后备
+  if (/创建|create|wallet/.test(normalizedInput)) {
+    const network = normalizedInput.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
     return { type: "create_wallet", network };
   }
-  
-  if (/余额|balance/.test(input)) {
-    const token = (input.match(/(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
-    const chain = input.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
+
+  if (/余额|balance/.test(normalizedInput)) {
+    const token = (normalizedInput.match(/(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
+    const chain = normalizedInput.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
     return { type: "balance", token, chain };
   }
 
-  if (/swap|兑换|兌換|换/.test(input)) {
-    const amt = Number(input.match(/(\d+\.?\d*)\s*(zeta|eth|btc|usdc)/)?.[1]);
-    const from = (input.match(/\d+\.?\d*\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
-    const to = (input.match(/to\s*(zeta|eth|btc|usdc)/)?.[1] || input.match(/成\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
-    const srcChain = input.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
-    const dstChain = input.match(/(到|to)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
+  if (/swap|兑换|兌換|换/.test(normalizedInput)) {
+    const amt = Number(normalizedInput.match(/(\d+\.?\d*)\s*(zeta|eth|btc|usdc)/)?.[1]);
+    const from = (normalizedInput.match(/\d+\.?\d*\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
+    const to = (normalizedInput.match(/to\s*(zeta|eth|btc|usdc)/)?.[1] || normalizedInput.match(/成\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
+    const srcChain = normalizedInput.match(/(在|on)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
+    const dstChain = normalizedInput.match(/(到|to)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
     if (from && to) return { type: "swap", from, to, amount: isNaN(amt) ? undefined : amt, srcChain, dstChain };
   }
   return { type: "unknown" };
@@ -95,12 +110,13 @@ interface ChatProps {
   lang: string;
   onCreateWallet: () => void;
   onSwap: () => void;
+  onRebalance: (plan: ExecutablePlan) => void;
   onShowToast: (text: string, icon?: React.ReactNode) => void;
 }
 
-export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }: ChatProps) {
+export default function Chat({ i18n, lang, onCreateWallet, onSwap, onRebalance, onShowToast }: ChatProps) {
   const STR = i18n[lang];
-  
+
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([
     { role: "assistant", text: i18n.en.chat.initial }, // Default to English initially
@@ -117,12 +133,12 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
     if (!input.trim()) return;
     const userMessage = input;
     const action = parseCommand(input);
-    
+
     // Add user message to chat
     setMessages((m) => [...m, { role: "user", text: userMessage }]);
     setInput("");
     setBusy(true);
-    
+
     try {
       // Check if we should use AI or command parsing
       if (useAI) {
@@ -130,7 +146,7 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
         // Add explicit type assertion to ensure type safety
         const currentMessages = [...messages, { role: "user" as const, text: userMessage }];
         const aiResponse = await sendChatMessage(currentMessages);
-        
+
         setMessages((m) => [...m, { role: "assistant", text: aiResponse }]);
       } else {
         // Use command parsing (existing functionality)
@@ -154,6 +170,37 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
           }
           case "balance": {
             setMessages((m) => [...m, { role: "assistant", text: STR.msgs.balance(action.token, action.chain) }]);
+            break;
+          }
+          case "rebalance": {
+            if (action.intent) {
+              setMessages((m) => [...m, { role: "assistant", text: "正在为您生成资产配置计划，请稍候..." }]);
+
+              try {
+                const plan = await generatePlan(action.intent);
+                const validation = validatePlan(plan);
+
+                if (validation.isValid) {
+                  const summary = formatPlanSummary(plan);
+                  setMessages((m) => [...m, { role: "assistant", text: summary }]);
+                  onRebalance(plan);
+                  onShowToast("资产配置计划已生成", <PieChart size={16} />);
+                } else {
+                  setMessages((m) => [...m, {
+                    role: "assistant",
+                    text: `计划验证失败：\n${validation.errors.join('\n')}`
+                  }]);
+                  onShowToast("计划验证失败，请检查输入");
+                }
+              } catch (error) {
+                console.error("生成计划失败:", error);
+                setMessages((m) => [...m, {
+                  role: "assistant",
+                  text: "抱歉，生成计划时遇到错误，请重试。"
+                }]);
+                onShowToast("生成计划失败");
+              }
+            }
             break;
           }
           default: {
@@ -180,12 +227,12 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onShowToast }
             <div className="text-sm font-medium" style={{ color: theme.text }}>{STR.chat.title}</div>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setUseAI(!useAI)} 
+            <button
+              onClick={() => setUseAI(!useAI)}
               className="rounded-lg px-2 py-1 text-xs"
-              style={{ 
+              style={{
                 background: useAI ? theme.accent : "rgba(255,255,255,0.06)",
-                color: theme.text 
+                color: theme.text
               }}
             >
               {useAI ? "AI Mode" : "Command Mode"}
