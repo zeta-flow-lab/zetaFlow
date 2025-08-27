@@ -20,6 +20,7 @@ export default function OutboundTestPage() {
     const [txHash, setTxHash] = useState<string>('');
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string>('');
+    const [appBalance, setAppBalance] = useState<string>('');
 
     const universalApp = useMemo(() => getUniversalAppAddress(7001), []);
     const tokenAddress = useMemo(() => ZETACHAIN_ATHENS_TOKENS[tokenSymbol?.toUpperCase?.() || 'ETH'], [tokenSymbol]);
@@ -29,7 +30,8 @@ export default function OutboundTestPage() {
             try {
                 if (!athensClient || !tokenAddress) return;
                 const erc20Abi = parseAbi([
-                    'function decimals() view returns (uint8)'
+                    'function decimals() view returns (uint8)',
+                    'function balanceOf(address) view returns (uint256)'
                 ] as const);
                 const dec = (await athensClient.readContract({
                     abi: erc20Abi,
@@ -37,9 +39,18 @@ export default function OutboundTestPage() {
                     functionName: 'decimals'
                 })) as number;
                 if (typeof dec === 'number' && dec > 0 && dec <= 36) setTokenDecimals(dec);
+                if (universalApp) {
+                    const bal = (await athensClient.readContract({
+                        abi: erc20Abi,
+                        address: tokenAddress as any,
+                        functionName: 'balanceOf',
+                        args: [universalApp as `0x${string}`]
+                    })) as bigint;
+                    setAppBalance(bal.toString());
+                }
             } catch { }
         })();
-    }, [athensClient, tokenAddress]);
+    }, [athensClient, tokenAddress, universalApp]);
 
     async function handleExecuteWithdraw() {
         setError('');
@@ -84,7 +95,7 @@ export default function OutboundTestPage() {
                 chain: walletClient.chain!,
             });
             setTxHash(hash);
-            await athensClient.waitForTransactionReceipt({ hash });
+            await athensClient.waitForTransactionReceipt({ hash, pollingInterval: 2000, timeout: 180_000 });
         } catch (e: any) {
             setError(e?.message || '执行失败');
         } finally {
@@ -108,6 +119,9 @@ export default function OutboundTestPage() {
                         ))}
                     </select>
                     <div className="text-xs opacity-70">地址：{tokenAddress}</div>
+                    {appBalance && (
+                        <div className="text-xs opacity-70">合约余额：{appBalance}</div>
+                    )}
                 </div>
                 <div>
                     <label className="text-sm">金额（{tokenDecimals} 位小数）</label>

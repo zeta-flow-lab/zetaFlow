@@ -19,7 +19,7 @@ export interface TokenAddresses {
 // ZetaChain Athens 测试网合约地址
 export const ZETACHAIN_ATHENS_ADDRESSES: ContractAddresses = {
     gateway: '0x6c533f7fe93fae114d0954697069df33c9b74fd7', // Gateway (ZEVM) on Athens testnet
-    universalApp: '0x671efc071f0405308e21B99092df945975ed534b', // Deployed Universal App (Athens)
+    universalApp: '0xea88458beCA36881C91B8fd8Ad42ce1d776dD685', // 新部署的增强版 Universal App (Athens)
 };
 
 // Ethereum Sepolia 测试网合约地址
@@ -55,11 +55,17 @@ export const CONTRACT_ADDRESSES: Record<number, ContractAddresses> = {
 
 // ZetaChain Athens 测试网代币地址 (ZRC-20)
 export const ZETACHAIN_ATHENS_TOKENS: TokenAddresses = {
-    'ETH': '0x5F0b1a82749cb4E2278EC87F8BF6B618dC71a8bf', // ZRC-20 ETH
-    'BTC': '0x13A0c5930C028511Dc02665E7285134B6d11A5f4', // ZRC-20 BTC
-    'USDC': '0x05BA149A7bd6dC1F937fA9046A9e05C05f3b18b0', // ZRC-20 USDC
-    'USDT': '0x7c8dDa80bbBE1254a7aACf3219EBe1481c6E01d7', // ZRC-20 USDT
-    'ZETA': '0x5F0b1a82749cb4E2278EC87F8BF6B618dC71a8bf', // Native ZETA
+    // 参考 contracts/addresses.testnet.json
+    // sETH（来自 Sepolia ETH）
+    'ETH': '0x05BA149A7bd6dC1F937fA9046A9e05C05f3b18b0', // sETH.SEPOLIA
+    // Sepolia USDC 对应的 ZRC-20
+    'USDC': '0xcC683A782f4B30c138787CB5576a86AF66fdc31d', // USDC.SEPOLIA
+    // sBTC（Bitcoin Signet）
+    'BTC': '0xdbfF6471a79E5374d771922F2194eccc42210B9F', // sBTC.BTC
+    // BSC Testnet USDC（如需）
+    'USDC.BSC': '0x7c8dDa80bbBE1254a7aACf3219EBe1481c6E01d7',
+    // ZETA（非 ZRC-20，保留占位，避免误用）
+    'ZETA': '0x5F0b1a82749cb4E2278EC87F8BF6B618dC71a8bf',
 };
 
 // Ethereum Sepolia 测试网代币地址
@@ -97,11 +103,19 @@ export function getTokenAddresses(chainId: number): TokenAddresses | undefined {
 
 // 获取 Gateway 地址
 export function getGatewayAddress(chainId: number): string | undefined {
+    // 允许通过 .env 覆盖，例如 VITE_GATEWAY_7001
+    const envKey = `VITE_GATEWAY_${chainId}`;
+    const envVal = (import.meta as any)?.env?.[envKey] as string | undefined;
+    if (envVal && /^0x[a-fA-F0-9]{40}$/.test(envVal)) return envVal;
     return CONTRACT_ADDRESSES[chainId]?.gateway;
 }
 
 // 获取 Universal App 地址
 export function getUniversalAppAddress(chainId: number): string | undefined {
+    // 允许通过 .env 覆盖，例如 VITE_UNIVERSAL_APP_7001
+    const envKey = `VITE_UNIVERSAL_APP_${chainId}`;
+    const envVal = (import.meta as any)?.env?.[envKey] as string | undefined;
+    if (envVal && /^0x[a-fA-F0-9]{40}$/.test(envVal)) return envVal;
     return CONTRACT_ADDRESSES[chainId]?.universalApp;
 }
 

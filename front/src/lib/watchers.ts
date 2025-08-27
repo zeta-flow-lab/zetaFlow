@@ -14,7 +14,9 @@ const UNIVERSAL_APP_ABI = parseAbi([
     'event StepExecuted(bytes32 indexed planId, uint256 indexed stepIndex, address token, uint256 amount, uint256 dstChainId, address receiver)',
     'event PlanCompleted(bytes32 indexed planId, uint256 steps)',
     'event PlanFailed(bytes32 indexed planId, string reason)',
-    'event PlanReverted(address asset, uint64 amount, bytes revertMessage)'
+    'event PlanReverted(address asset, uint256 amount, bytes revertMessage)',
+    'event MessageSent(bytes receiver, address gasZRC20, uint256 gasLimit, bytes data)',
+    'event MessageReverted(bytes revertMessage)'
 ] as const);
 
 export interface GatewayDepositEvent {
@@ -86,6 +88,8 @@ export function watchUniversalApp(
         onPlanCompleted: (log: any) => void,
         onPlanFailed: (log: any) => void,
         onPlanReverted: (log: any) => void,
+        onMessageSent: (log: any) => void,
+        onMessageReverted: (log: any) => void,
     }>
 ): () => void {
     const unsubs: Array<() => void> = [];
@@ -133,6 +137,26 @@ export function watchUniversalApp(
             abi: UNIVERSAL_APP_ABI,
             eventName: 'PlanReverted',
             onLogs: (logs) => logs.forEach((log) => handlers.onPlanReverted?.(log))
+        });
+        unsubs.push(() => un?.());
+    }
+
+    if (handlers.onMessageSent) {
+        const un = publicClient.watchContractEvent({
+            address: appAddress,
+            abi: UNIVERSAL_APP_ABI,
+            eventName: 'MessageSent',
+            onLogs: (logs) => logs.forEach((log) => handlers.onMessageSent?.(log))
+        });
+        unsubs.push(() => un?.());
+    }
+
+    if (handlers.onMessageReverted) {
+        const un = publicClient.watchContractEvent({
+            address: appAddress,
+            abi: UNIVERSAL_APP_ABI,
+            eventName: 'MessageReverted',
+            onLogs: (logs) => logs.forEach((log) => handlers.onMessageReverted?.(log))
         });
         unsubs.push(() => un?.());
     }

@@ -142,12 +142,63 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onRebalance, 
     try {
       // Check if we should use AI or command parsing
       if (useAI) {
-        // Use OneRouter API for AI responses
-        // Add explicit type assertion to ensure type safety
-        const currentMessages = [...messages, { role: "user" as const, text: userMessage }];
-        const aiResponse = await sendChatMessage(currentMessages);
+        // 增强的 AI 模式：AI 响应 + 意图检测
 
+        // 1. 首先检查是否为资产配置意图
+        const parsedIntent = parseIntent(userMessage);
+        const isRebalanceRequest = parsedIntent.type === "rebalance";
+
+        console.log('用户输入:', userMessage);
+        try { console.log('解析意图:', JSON.parse(JSON.stringify(parsedIntent))); } catch { console.log('解析意图:', parsedIntent); }
+
+        // 2. 获取 AI 响应（包含资产配置系统提示）
+        const currentMessages = [...messages, { role: "user" as const, text: userMessage }];
+
+        // 为 AI 添加系统上下文，使其了解资产配置功能
+        const enhancedMessages = [
+          {
+            role: "system" as const,
+            text: `你是 ZetaFlow 的 AI 助手，专门帮助用户进行跨链资产配置。当用户表达资产配置意图时（如"把我的ETH配置为50% BTC，30% USDC"），你应该：
+1. 确认理解用户的配置需求
+2. 解释即将执行的操作
+3. 提示用户确认计划
+你可以处理的资产配置包括：BTC, ETH, USDC, BNB, ZETA 等，支持跨链分配。`
+          },
+          ...currentMessages
+        ];
+
+        const aiResponse = await sendChatMessage(enhancedMessages);
         setMessages((m) => [...m, { role: "assistant", text: aiResponse }]);
+
+        // 3. 如果检测到资产配置意图，自动生成计划
+        if (isRebalanceRequest && parsedIntent.type === "rebalance") {
+          setMessages((m) => [...m, { role: "assistant", text: "\n🔄 正在为您生成详细的资产配置计划..." }]);
+
+          try {
+            const plan = await generatePlan(parsedIntent);
+            const validation = validatePlan(plan);
+
+            if (validation.isValid) {
+              const summary = formatPlanSummary(plan);
+              setMessages((m) => [...m, { role: "assistant", text: `\n📊 计划已生成：\n${summary}` }]);
+              onRebalance(plan);
+              onShowToast("资产配置计划已生成", <PieChart size={16} />);
+            } else {
+              setMessages((m) => [...m, {
+                role: "assistant",
+                text: `\n❌ 计划验证失败：\n${validation.errors.join('\n')}`
+              }]);
+              onShowToast("计划验证失败，请检查输入");
+            }
+          } catch (error) {
+            console.error("生成计划失败:", error);
+            setMessages((m) => [...m, {
+              role: "assistant",
+              text: "\n⚠️ 抱歉，生成计划时遇到错误，请重试。"
+            }]);
+            onShowToast("生成计划失败");
+          }
+        }
       } else {
         // Use command parsing (existing functionality)
         await sleep(480);

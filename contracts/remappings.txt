@@ -1,0 +1,3 @@
+@zetachain/protocol-contracts/=dependencies/protocol-contracts/
+@uniswap/v2-periphery/=dependencies/v2-periphery/
+forge-std/=/home/amyseer/zeta/zetaFlow/contracts/lib/forge-std/src/

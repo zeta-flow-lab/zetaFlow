@@ -50,6 +50,10 @@ export function parseIntent(input: string): ParsedIntent {
     const normalizedInput = input
         .trim()
         .toLowerCase()
+        .replace(/[\u3000]/g, ' ') // 全角空格
+        .replace(/[，、]/g, ',') // 中文逗号/顿号 → 英文逗号
+        .replace(/[％]/g, '%') // 全角百分号 → 半角
+        .replace(/[的]/g, ' ') // 删除“的”
         .replace(/个/g, ' ')
         .replace(/\s+/g, ' ');
 
@@ -89,11 +93,11 @@ function parseRebalanceIntent(input: string): RebalanceIntent {
     const targets: RebalanceIntent['targets'] = [];
 
     // 解析百分比配置
-    // 匹配模式：50% BTC, 30% ETH, 20% 风险资产
-    const percentageMatches = input.matchAll(/(\d+)%?\s*(btc|eth|usdc|usdt|bnb|sol|ada|dot|风险|高风险|稳定|layer2|l2)/gi);
+    // 匹配模式：50% BTC, 30% ETH, 20% ZETA, 20% 风险资产
+    const percentageMatches = input.matchAll(/(\d+(?:\.\d+)?)%?\s*(btc|eth|usdc|usdt|bnb|zeta|sol|ada|dot|matic|arb|op|风险|高风险|稳定|layer2|l2)/gi);
 
     for (const match of percentageMatches) {
-        const weight = parseInt(match[1]) / 100;
+        const weight = parseFloat(match[1]) / 100;
         const asset = match[2].toLowerCase();
 
         if (['风险', '高风险'].includes(asset)) {

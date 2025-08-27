@@ -1,4 +1,13 @@
 {
+  "dependencies/v2-periphery": {
+    "rev": "0335e8f7e1bd1e8d8329fd300aea2ef2f36dd19f"
+  },
+  "dependencies/protocol-contracts": {
+    "tag": {
+      "name": "v13.0.0",
+      "rev": "1d79e0ff60291a3f9fb0338e6ac7415b60f73ab8"
+    }
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.10.0",

@@ -35,29 +35,29 @@ const DEFAULT_MODEL = 'claude-3-5-sonnet@20240620';
 
 /**
  * Send a message to OneRouter API and get the AI response
- * @param messages Array of messages from Chat component
+ * @param messages Array of messages from Chat component (supports system messages)
  * @param model AI model to use (defaults to claude-3-5-sonnet@20240620)
  * @returns Promise with the assistant's response text
  */
 export const sendChatMessage = async (
-  messages: { role: "user" | "assistant"; text: string }[],
+  messages: { role: "user" | "assistant" | "system"; text: string }[],
   model: string = DEFAULT_MODEL
 ): Promise<string> => {
   try {
     // Get API key from environment variables
     const apiKey = import.meta.env.VITE_API_KEY;
-    
+
     if (!apiKey) {
       console.error('OneRouter API key not found in environment variables');
       throw new Error('API key not configured');
     }
-    
+
     // Format messages for the API
     const formattedMessages = messages.map(msg => ({
-      role: msg.role as 'user' | 'assistant',
+      role: msg.role as 'user' | 'assistant' | 'system',
       content: msg.text,
     }));
-    
+
     // Make API request
     const response = await fetch(`${ONE_ROUTER_API_URL}/chat/completions`, {
       method: 'POST',
@@ -76,7 +76,7 @@ export const sendChatMessage = async (
     }
 
     const data = await response.json();
-    
+
     // Extract assistant's response
     const assistantMessage = data.choices[0]?.message;
     return assistantMessage?.content || '';
