@@ -148,6 +148,64 @@ export async function depositPlanWithERC20(
     return { chainId, hash };
 }
 
+export async function depositCallWithNativeData(
+    _publicClient: PublicClient,
+    walletClient: WalletClient,
+    chainId: number,
+    universalApp: Address,
+    nativeAmountWei: bigint,
+    data: Hex,
+    revertOptions: RevertOptions
+): Promise<GatewayTxResult> {
+    if (walletClient.chain?.id !== chainId) {
+        throw new GatewayError(`钱包当前网络(${walletClient.chain?.id})与目标网络(${chainId})不一致`);
+    }
+    const gateway = getGatewayAddress(chainId);
+    if (!gateway) throw new GatewayError(`未配置 Gateway 地址: chainId=${chainId}`);
+
+    const hash = await walletClient.writeContract({
+        abi: GATEWAY_ABI,
+        address: gateway as Address,
+        functionName: 'depositAndCall',
+        args: [universalApp, data, revertOptions],
+        value: nativeAmountWei,
+        account: walletClient.account!,
+        chain: walletClient.chain,
+    });
+    return { chainId, hash };
+}
+
+export async function depositCallWithERC20Data(
+    publicClient: PublicClient,
+    walletClient: WalletClient,
+    chainId: number,
+    erc20Token: Address,
+    universalApp: Address,
+    amount: bigint,
+    data: Hex,
+    revertOptions: RevertOptions
+): Promise<GatewayTxResult> {
+    if (walletClient.chain?.id !== chainId) {
+        throw new GatewayError(`钱包当前网络(${walletClient.chain?.id})与目标网络(${chainId})不一致`);
+    }
+    const gateway = getGatewayAddress(chainId);
+    if (!gateway) throw new GatewayError(`未配置 Gateway 地址: chainId=${chainId}`);
+    const sender = walletClient.account?.address as Address;
+    if (!sender) throw new GatewayError('钱包未连接');
+
+    await ensureAllowance(publicClient, walletClient, erc20Token, sender, gateway as Address, amount);
+
+    const hash = await walletClient.writeContract({
+        abi: GATEWAY_ABI,
+        address: gateway as Address,
+        functionName: 'depositAndCall',
+        args: [universalApp, amount, erc20Token, data, revertOptions],
+        account: walletClient.account!,
+        chain: walletClient.chain,
+    });
+    return { chainId, hash };
+}
+
 // 等待回执
 export async function waitForReceipt(
     publicClient: PublicClient,

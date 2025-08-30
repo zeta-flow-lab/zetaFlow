@@ -52,6 +52,14 @@ contract ZetaFlowUniversalApp is UniversalContract {
 
     mapping(bytes32 => PlanState) public plans; // planId => state
 
+    // 入站资产与原始计划内容存储，支持“入站/出站分离”
+    struct PlanDeposit {
+        address zrc20;
+        uint256 amount;
+    }
+    mapping(bytes32 => PlanDeposit) public planDeposits; // planId => inbound token & amount
+    mapping(bytes32 => bytes) public planPayloads; // planId => raw plan payload (ABI 编码)
+
     // ZRC-20 代币地址映射 (Athens 测试网)
     mapping(string => address) public zrc20Tokens;
 
@@ -249,23 +257,9 @@ contract ZetaFlowUniversalApp is UniversalContract {
         emit PlanSubmitted(planId, submitter, keccak256(message));
         emit AssetReceived(zrc20, amount, submitter);
 
-        // 执行真实的资产配置
-        try
-            this._executeRebalancePlan(
-                planId,
-                zrc20,
-                amount,
-                message,
-                submitter
-            )
-        {
-            plans[planId].completed = true;
-            emit PlanCompleted(planId, plans[planId].currentStep);
-        } catch Error(string memory reason) {
-            emit PlanFailed(planId, reason);
-            // 失败时退还原始资产
-            _refundAsset(submitter, zrc20, amount);
-        }
+        // 入站/出站分离：仅记录入站资产与原始计划，由提交者后续主动触发执行
+        planDeposits[planId] = PlanDeposit({zrc20: zrc20, amount: amount});
+        planPayloads[planId] = message;
     }
 
     /**
@@ -309,6 +303,42 @@ contract ZetaFlowUniversalApp is UniversalContract {
                 );
             }
         }
+    }
+
+    /**
+     * 手动执行计划：由提交者在入站确认后调用，触发 swap/withdraw 等出站逻辑
+     */
+    function executePlan(bytes32 planId) external onlyPlanSubmitter(planId) {
+        require(!plans[planId].completed, "PLAN_DONE");
+        PlanDeposit memory dep = planDeposits[planId];
+        require(dep.zrc20 != address(0) && dep.amount > 0, "NO_DEPOSIT");
+
+        // 取回原始 payload
+        bytes memory payload = planPayloads[planId];
+        require(payload.length > 0, "NO_PAYLOAD");
+
+        try
+            this._executeRebalancePlan(
+                planId,
+                dep.zrc20,
+                dep.amount,
+                payload,
+                plans[planId].submitter
+            )
+        {
+            plans[planId].completed = true;
+            emit PlanCompleted(planId, plans[planId].currentStep);
+        } catch Error(string memory reason) {
+            emit PlanFailed(planId, reason);
+        }
+    }
+
+    /** 可选：执行完毕后清理原始 payload，减少存储占用 */
+    function clearPlanPayload(
+        bytes32 planId
+    ) external onlyPlanSubmitter(planId) {
+        require(plans[planId].completed, "NOT_DONE");
+        delete planPayloads[planId];
     }
 
     /**
@@ -457,12 +487,13 @@ contract ZetaFlowUniversalApp is UniversalContract {
     ) internal {
         bytes memory receiver = abi.encodePacked(recipient);
 
+        // 按官方建议：提现仅需 withdraw gas fee，不应启用 onRevert/abort
         RevertOptions memory revertOptions = RevertOptions({
-            revertAddress: address(this),
-            callOnRevert: true,
-            abortAddress: recipient,
-            revertMessage: abi.encode("REBALANCE_FAILED", symbol),
-            onRevertGasLimit: 300000
+            revertAddress: address(0),
+            callOnRevert: false,
+            abortAddress: address(0),
+            revertMessage: bytes(""),
+            onRevertGasLimit: 0
         });
 
         // 1) 预备目标链 gas 费（参考官方 Swap 教程）
@@ -756,6 +787,55 @@ contract ZetaFlowUniversalApp is UniversalContract {
         );
     }
 
+    /**
+     * 仅进行 Swap（不出站），将合约持有的 tokenIn 兑换为 tokenOut
+     */
+    function executeSwapStep(
+        bytes32 planId,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 minAmountOut,
+        address[] calldata path,
+        uint256 deadline
+    ) external onlyPlanSubmitter(planId) {
+        require(address(dexRouter) != address(0), "ROUTER_NOT_SET");
+        require(!plans[planId].completed, "PLAN_DONE");
+        require(amountIn > 0, "AMOUNT_ZERO");
+        require(
+            path.length >= 2 &&
+                path[0] == tokenIn &&
+                path[path.length - 1] == tokenOut,
+            "BAD_PATH"
+        );
+
+        uint256 balanceBefore = IZRC20(tokenOut).balanceOf(address(this));
+
+        uint256 currentAllowance = IZRC20(tokenIn).allowance(
+            address(this),
+            address(dexRouter)
+        );
+        if (currentAllowance < amountIn) {
+            IZRC20(tokenIn).approve(address(dexRouter), 0);
+            IZRC20(tokenIn).approve(address(dexRouter), amountIn);
+        }
+
+        dexRouter.swapExactTokensForTokens(
+            amountIn,
+            minAmountOut,
+            path,
+            address(this),
+            deadline
+        );
+
+        uint256 balanceAfter = IZRC20(tokenOut).balanceOf(address(this));
+        uint256 actualOut = balanceAfter - balanceBefore;
+        require(actualOut >= minAmountOut, "INSUFFICIENT_OUT");
+
+        emit SwapExecuted(planId, tokenIn, tokenOut, amountIn, actualOut);
+        plans[planId].currentStep += 1;
+    }
+
     /** 标记计划完成（可选） */
     function completePlan(bytes32 planId) external onlyPlanSubmitter(planId) {
         require(!plans[planId].completed, "PLAN_DONE");
@@ -784,5 +864,19 @@ contract ZetaFlowUniversalApp is UniversalContract {
             revertContext.amount,
             revertContext.revertMessage
         );
+    }
+
+    /**
+     * 仅提现（带 gas 预备与授权），便于前端/脚本在三段式流程中单独触发出站
+     */
+    function withdrawWithGasPrep(
+        address zrc20,
+        uint256 amount,
+        string calldata symbol,
+        address recipient
+    ) external onlyOwner {
+        require(zrc20 != address(0) && amount > 0, "BAD_PARAMS");
+        require(recipient != address(0), "RECIPIENT_ZERO");
+        _withdrawToChain(zrc20, amount, symbol, recipient);
     }
 }

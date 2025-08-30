@@ -17,6 +17,9 @@ import { watchUniversalApp, watchGatewayWithdrawals } from "../../lib/watchers";
 import { sendMessage } from "../../lib/universalApp";
 import { depositPlanWithNative, depositPlanWithERC20, waitForReceipt, type RevertOptions } from "../../lib/gateway";
 import type { ExecutablePlan } from "../../lib/plan-generator";
+import InboundPanel from './components/InboundPanel';
+import SwapPanel from './components/SwapPanel';
+import WithdrawPanel from './components/WithdrawPanel';
 /**
 * ZetaFlow — 多语言 + 动效版
 * 本次更新：
@@ -374,6 +377,9 @@ export default function ZetaFlow() {
           onRebalance={handleRebalance}
           onShowToast={(text, icon) => push({ icon: icon || <ArrowLeftRight size={16} />, text })}
         />
+        <div className="mt-6">
+          <PanelsContainer publicClient={publicClient} walletClient={walletClient} />
+        </div>
         <div className="mt-4 flex justify-end">
           <button
             className="rounded-xl px-3 py-2 text-sm"
@@ -1033,3 +1039,13 @@ function RebalancePlanModal({
 }
 
 // 多语言支持已完成
+
+function PanelsContainer({ publicClient, walletClient }: any) {
+  return (
+    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr' }}>
+      <InboundPanel publicClient={publicClient} walletClient={walletClient} />
+      <SwapPanel publicClient={publicClient} walletClient={walletClient} />
+      <WithdrawPanel publicClient={publicClient} walletClient={walletClient} />
+    </div>
+  );
+}
