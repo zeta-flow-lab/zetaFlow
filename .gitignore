@@ -30,6 +30,7 @@ dist-ssr
 !.env.example
 .envrc
 .direnv
+access_token
 *.pem
 *.key
 *.p12
