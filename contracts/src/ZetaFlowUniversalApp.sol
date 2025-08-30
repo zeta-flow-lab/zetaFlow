@@ -500,27 +500,31 @@ contract ZetaFlowUniversalApp is UniversalContract {
         // https://www.zetachain.com/docs/developers/tutorials/swap/
         (address gasZRC20, uint256 gasFee) = IZRC20(zrc20).withdrawGasFee();
 
+        // 记录净提现额，可能在 gasZRC20 与 zrc20 相同的情况下从 amount 中预留手续费
+        uint256 netAmount = amount;
+
         // 若 gas 余额不足，尝试用当前待提现代币兑换一部分为 gasZRC20
         if (gasFee > 0) {
             uint256 gasBal = IZRC20(gasZRC20).balanceOf(address(this));
             if (gasBal < gasFee) {
                 if (zrc20 == gasZRC20) {
                     // 若本次 amount 不足以覆盖 gas，跳过本次提现，等待后续补足
-                    if (amount <= gasFee) {
+                    if (netAmount <= gasFee) {
                         emit WithdrawSkippedInsufficientGas(
                             gasZRC20,
                             gasFee,
-                            gasBal + amount,
+                            gasBal + netAmount,
                             zrc20
                         );
                         return;
                     }
-                    amount = amount - gasFee; // 直接从本次 amount 中预留 gas
+                    // 直接从本次 amount 中预留 gas（得到净额）
+                    netAmount = netAmount - gasFee;
                 } else {
                     // 用部分 zrc20 兑换为 gasZRC20（简化：按 1:1 预估）
                     uint256 amountInForGas = gasFee;
-                    if (amountInForGas > amount) {
-                        amountInForGas = amount;
+                    if (amountInForGas > netAmount) {
+                        amountInForGas = netAmount;
                     }
 
                     // 授权 Router
@@ -565,20 +569,28 @@ contract ZetaFlowUniversalApp is UniversalContract {
                 return;
             }
 
-            // 授权 Gateway 支付 gas 与目标代币
-            IZRC20(gasZRC20).approve(address(gateway), gasFee);
-            IZRC20(zrc20).approve(address(gateway), 0);
-            IZRC20(zrc20).approve(address(gateway), amount);
+            // 授权 Gateway：
+            if (gasZRC20 == zrc20) {
+                // 同一代币：一次性授权净额+手续费，避免两次 approve 被覆盖
+                uint256 combinedAllowance = netAmount + gasFee;
+                IZRC20(zrc20).approve(address(gateway), 0);
+                IZRC20(zrc20).approve(address(gateway), combinedAllowance);
+            } else {
+                // 不同代币：分别授权 gas 币与提现币
+                IZRC20(gasZRC20).approve(address(gateway), gasFee);
+                IZRC20(zrc20).approve(address(gateway), 0);
+                IZRC20(zrc20).approve(address(gateway), netAmount);
+            }
 
             emit GasFeePrepared(gasZRC20, gasFee, zrc20);
         } else {
             // 无需 gas 费时，仍需授权目标代币
             IZRC20(zrc20).approve(address(gateway), 0);
-            IZRC20(zrc20).approve(address(gateway), amount);
+            IZRC20(zrc20).approve(address(gateway), netAmount);
         }
 
         // 2) 提现到目标链
-        gateway.withdraw(receiver, amount, zrc20, revertOptions);
+        gateway.withdraw(receiver, netAmount, zrc20, revertOptions);
     }
 
     /**
