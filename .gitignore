@@ -24,3 +24,68 @@ dist-ssr
 *.sw?
 
 .env
+
+# Env and secrets
+.env.*
+!.env.example
+.envrc
+.direnv
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.keystore
+*.ks
+*.asc
+*.gpg
+*.age
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+secrets.*
+secret.*
+*.secret
+*.credentials
+*.auth
+*.token
+
+# JavaScript/TypeScript build artifacts
+build
+out
+.cache
+.parcel-cache
+.vite
+.turbo
+.next
+.nuxt
+.docusaurus
+storybook-static
+coverage
+.nyc_output
+*.tsbuildinfo
+
+# Package manager caches
+.pnpm-store
+.npm
+.yarn
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# EVM tooling (Foundry / Hardhat / Truffle)
+artifacts/
+typechain/
+typechain-types/
+cache/
+out/
+broadcast/
+
+# IDE/project local metadata
+.history
+.fleet
+.cursor
