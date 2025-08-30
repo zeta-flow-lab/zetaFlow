@@ -19,7 +19,7 @@ export interface TokenAddresses {
 // ZetaChain Athens 测试网合约地址
 export const ZETACHAIN_ATHENS_ADDRESSES: ContractAddresses = {
     gateway: '0x6c533f7fe93fae114d0954697069df33c9b74fd7', // Gateway (ZEVM) on Athens testnet
-    universalApp: '0xea88458beCA36881C91B8fd8Ad42ce1d776dD685', // 新部署的增强版 Universal App (Athens)
+    universalApp: '0xc76aE7D9f3359E39703387b548eFDf0b6D1C4060', // 最新 Universal App (Athens)
 };
 
 // Ethereum Sepolia 测试网合约地址

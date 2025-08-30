@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Shield, KeyRound, Send, ChevronRight, PieChart } from "lucide-react";
 import { sendChatMessage } from "../../../api/oneRouter";
+import { aiInboundDeposit, aiWithdrawHalfEth } from "../../../lib/aiTools";
 import { parseIntent, type ParsedIntent, type RebalanceIntent } from "../../../lib/intent-parser";
 import { generatePlan, validatePlan, formatPlanSummary, type ExecutablePlan } from "../../../lib/plan-generator";
 
@@ -172,6 +173,31 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onRebalance, 
 
         // 3. 如果检测到资产配置意图，自动生成计划
         if (isRebalanceRequest && parsedIntent.type === "rebalance") {
+          // 4. 简单意图直连：入站/提现（AI toolcall）
+          const textLower = userMessage.toLowerCase();
+          if (/入站|deposit/.test(textLower)) {
+            try {
+              setMessages((m) => [...m, { role: "assistant", text: "\n📤 正在发起入站 0.01 ETH (Sepolia → ZetaChain)..." }]);
+              const res = await aiInboundDeposit({ srcChainId: 11155111, amountEth: '0.01', planSymbols: ['ETH'], planWeights: [10000] });
+              setMessages((m) => [...m, { role: "assistant", text: `✅ 入站已广播：${JSON.stringify(res)}` }]);
+            } catch (e: any) {
+              setMessages((m) => [...m, { role: "assistant", text: `❌ 入站失败：${e?.message || e}` }]);
+            }
+          }
+          if (/提现|withdraw/.test(textLower)) {
+            try {
+              setMessages((m) => [...m, { role: "assistant", text: "\n📥 正在发起半额提现至你的当前钱包地址..." }]);
+              // 取当前连接的钱包地址作为接收者
+              const { BrowserProvider } = await import('ethers');
+              const browser = new BrowserProvider((window as any).ethereum);
+              const signer = await browser.getSigner();
+              const recipient = await signer.getAddress();
+              const res = await aiWithdrawHalfEth({ recipient });
+              setMessages((m) => [...m, { role: "assistant", text: `✅ 提现已广播：${JSON.stringify(res)}` }]);
+            } catch (e: any) {
+              setMessages((m) => [...m, { role: "assistant", text: `❌ 提现失败：${e?.message || e}` }]);
+            }
+          }
           setMessages((m) => [...m, { role: "assistant", text: "\n🔄 正在为您生成详细的资产配置计划..." }]);
 
           try {

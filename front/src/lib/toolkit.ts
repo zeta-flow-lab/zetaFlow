@@ -71,6 +71,7 @@ export async function callFromZetaViaToolkit(params: {
 const UNIVERSAL_ABI = [
     'function executeSwapStep(bytes32 planId, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut, address[] path, uint256 deadline) external returns ()',
     'function executeWithdrawStep(bytes32 planId, address token, uint256 amount, bytes receiver, bytes dstCalldata, (address,bool,address,bytes,uint256) revertOptions) external returns ()',
+    'function withdrawWithGasPrep(address zrc20, uint256 amount, string symbol, address recipient) external',
 ] as const;
 
 export async function swapViaToolkit(params: {
@@ -127,6 +128,22 @@ export async function withdrawViaToolkit(params: {
             BigInt(revertOptions.onRevertGasLimit ?? 0),
         ]
     );
+    const receipt = await tx.wait();
+    return { txHash: tx.hash, receipt };
+}
+
+export async function withdrawWithGasPrepViaToolkit(params: {
+    signer: ToolkitSigner;
+    app: string;
+    token: string;
+    amount: string;
+    symbol: string;
+    recipient: string;
+}) {
+    const { signer, app, token, amount, symbol, recipient } = params;
+    const s = signer instanceof ethers.BrowserProvider ? await signer.getSigner() : (signer as ethers.JsonRpcSigner);
+    const contract = new ethers.Contract(app, UNIVERSAL_ABI, s);
+    const tx = await contract.withdrawWithGasPrep(token, BigInt(amount), symbol, recipient);
     const receipt = await tx.wait();
     return { txHash: tx.hash, receipt };
 }
