@@ -102,11 +102,18 @@ export async function executeWithdrawStep(
 ): Promise<Hex> {
     const app = getUniversalAppAddress(7001);
     if (!app) throw new Error('未配置 Universal App 地址');
+    const tupleOptions: readonly [Address, boolean, Address, Hex, bigint] = [
+        revertOptions.revertAddress,
+        revertOptions.callOnRevert,
+        revertOptions.abortAddress,
+        revertOptions.revertMessage,
+        revertOptions.onRevertGasLimit,
+    ];
     const hash = await walletClient.writeContract({
         abi: UNIVERSAL_APP_ABI,
         address: app as Address,
         functionName: 'executeWithdrawStep',
-        args: [planId, token, amount, receiver, dstCalldata, revertOptions],
+        args: [planId, token, amount, receiver, dstCalldata, tupleOptions],
         account: walletClient.account!,
         chain: walletClient.chain,
     });

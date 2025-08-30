@@ -1,6 +1,7 @@
 export type { };
 
 import { ethers } from 'ethers';
+import { GATEWAY_ABI_FRAGMENTS, getGatewayAddress } from '../config/addresses';
 
 export type ToolkitSigner = ethers.Wallet | ethers.JsonRpcSigner | ethers.BrowserProvider;
 
@@ -19,53 +20,57 @@ export async function depositAndCallViaToolkit(params: {
         onRevertGasLimit?: string | number | bigint;
     };
 }) {
-    const { signer, gateway, universal, data, amount, token, revertOptions } = params;
-    // @ts-ignore: dynamic import of optional dependency types
-    const mod = await import('@zetachain/toolkit');
-    const res = await (mod as any).evmDepositAndCall({
-        receiver: universal,
-        amount,
-        token,
-        types: [],
-        values: [],
-        data,
-        revertOptions,
-    }, { signer: signer as any, gateway });
-    return res;
+    const { signer, universal, data, amount, token, revertOptions } = params;
+    // 选择网关地址（如果未传入则根据当前网络推断）
+    const s = signer instanceof ethers.BrowserProvider ? await signer.getSigner() : (signer as ethers.JsonRpcSigner);
+    const network = await s.provider!.getNetwork();
+    const gwAddr = params.gateway ?? getGatewayAddress(Number(network.chainId))!;
+    const gateway = new ethers.Contract(gwAddr, GATEWAY_ABI_FRAGMENTS, s);
+
+    const isDecimalNumber = /^(?:\d+\.\d+|\d+)$/.test(String(amount));
+
+    if (token && token !== ethers.ZeroAddress) {
+        // ERC20 入站：先授权，再 depositAndCall(receiver, amount, asset, payload, revertOptions)
+        const erc20 = new ethers.Contract(token, ['function approve(address spender, uint256 value) external returns (bool)'], s);
+        const approveTx = await erc20.approve(gwAddr, isDecimalNumber ? ethers.parseEther(String(amount)) : BigInt(amount));
+        await approveTx.wait();
+        const tx = await gateway.depositAndCall(
+            universal,
+            isDecimalNumber ? ethers.parseEther(String(amount)) : BigInt(amount),
+            token,
+            data,
+            [
+                revertOptions.revertAddress ?? ethers.ZeroAddress,
+                revertOptions.callOnRevert,
+                revertOptions.abortAddress ?? ethers.ZeroAddress,
+                revertOptions.revertMessage,
+                BigInt(revertOptions.onRevertGasLimit ?? 0),
+            ],
+        );
+        const receipt = await tx.wait();
+        return { txHash: tx.hash, receipt };
+    } else {
+        // 原生入站：depositAndCall(receiver, payload, revertOptions) payable
+        const value = isDecimalNumber ? ethers.parseEther(String(amount)) : BigInt(amount);
+        const tx = await gateway.depositAndCall(
+            universal,
+            data,
+            [
+                revertOptions.revertAddress ?? ethers.ZeroAddress,
+                revertOptions.callOnRevert,
+                revertOptions.abortAddress ?? ethers.ZeroAddress,
+                revertOptions.revertMessage,
+                BigInt(revertOptions.onRevertGasLimit ?? 0),
+            ],
+            { value }
+        );
+        const receipt = await tx.wait();
+        return { txHash: tx.hash, receipt };
+    }
 }
 
-export async function callFromZetaViaToolkit(params: {
-    signer: ToolkitSigner;
-    gateway?: string;
-    receiver: string;
-    zrc20: string;
-    functionSignature?: string;
-    types?: string[];
-    values?: (string | bigint | boolean)[];
-    data?: string;
-    revertOptions: {
-        revertAddress?: string;
-        callOnRevert: boolean;
-        abortAddress?: string;
-        revertMessage: string;
-        onRevertGasLimit?: string | number | bigint;
-    };
-    callOptions: { gasLimit: string | number | bigint; isArbitraryCall?: boolean };
-}) {
-    const { signer, gateway, receiver, zrc20, functionSignature, types, values, data, revertOptions, callOptions } = params;
-    // @ts-ignore: dynamic import of optional dependency types
-    const mod = await import('@zetachain/toolkit');
-    const res = await (mod as any).evmCall({
-        receiver,
-        function: functionSignature,
-        types,
-        values,
-        data,
-        revertOptions,
-        zrc20,
-        callOptions,
-    }, { signer: signer as any, gateway });
-    return res;
+export async function callFromZetaViaToolkit(): Promise<never> {
+    throw new Error('callFromZetaViaToolkit 暂不支持浏览器环境');
 }
 
 const UNIVERSAL_ABI = [
@@ -94,22 +99,6 @@ export async function withdrawViaToolkit(params: {
     revertOptions: { revertAddress?: string; callOnRevert: boolean; abortAddress?: string; revertMessage: string; onRevertGasLimit?: string | number | bigint; };
 }) {
     const { signer, app, planId, token, amount, receiver, dstCalldata = '0x', revertOptions } = params;
-
-    try {
-        // @ts-ignore: dynamic import of optional dependency types
-        const mod = await import('@zetachain/toolkit');
-        if (typeof (mod as any).evmWithdraw === 'function') {
-            const res = await (mod as any).evmWithdraw({
-                token: token,
-                amount: amount,
-                receiver: receiver,
-                revertOptions,
-            }, { signer: signer as any });
-            return res;
-        }
-    } catch (_e) {
-        // ignore
-    }
 
     const s = signer instanceof ethers.BrowserProvider ? await signer.getSigner() : (signer as ethers.JsonRpcSigner);
     const contract = new ethers.Contract(app, UNIVERSAL_ABI, s);

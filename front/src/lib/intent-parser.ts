@@ -50,10 +50,10 @@ export function parseIntent(input: string): ParsedIntent {
     const normalizedInput = input
         .trim()
         .toLowerCase()
-        .replace(/[\u3000]/g, ' ') // 全角空格
-        .replace(/[，、]/g, ',') // 中文逗号/顿号 → 英文逗号
-        .replace(/[％]/g, '%') // 全角百分号 → 半角
-        .replace(/[的]/g, ' ') // 删除“的”
+        .replace(/[\u3000]/g, ' ')
+        .replace(/[，、]/g, ',')
+        .replace(/[％]/g, '%')
+        .replace(/[的]/g, ' ')
         .replace(/个/g, ' ')
         .replace(/\s+/g, ' ');
 
@@ -62,17 +62,17 @@ export function parseIntent(input: string): ParsedIntent {
         return parseRebalanceIntent(normalizedInput);
     }
 
-    // 原有的swap意图
+    // swap 意图
     if (/swap|兑换|兌換|换/.test(normalizedInput)) {
         return parseSwapIntent(normalizedInput);
     }
 
-    // 原有的余额查询
+    // 余额查询
     if (/余额|balance/.test(normalizedInput)) {
         return parseBalanceIntent(normalizedInput);
     }
 
-    return { type: "unknown" };
+    return { type: "unknown" } as ParsedIntent;
 }
 
 function isRebalanceIntent(input: string): boolean {
@@ -105,7 +105,7 @@ function parseRebalanceIntent(input: string): RebalanceIntent {
                 tag: "high_risk",
                 basket: ["ARB", "OP", "SOL", "MATIC"],
                 weight,
-                dstChain: "ethereum" // 默认
+                dstChain: "ethereum"
             });
         } else if (asset === '稳定') {
             targets.push({
@@ -122,18 +122,13 @@ function parseRebalanceIntent(input: string): RebalanceIntent {
                 dstChain: "ethereum"
             });
         } else {
-            // 具体代币
             const symbol = asset.toUpperCase();
             const dstChain = getPreferredChain(symbol);
-            targets.push({
-                symbol,
-                weight,
-                dstChain
-            });
+            targets.push({ symbol, weight, dstChain });
         }
     }
 
-    // 解析预算（支持 USDC/USDT/USD 以及 ETH/BTC 等）
+    // 解析预算
     let budget: RebalanceIntent['budget'] | undefined;
     const budgetUsdMatch = input.match(/(\d+(?:\.\d+)?)\s*(usdc|usdt|usd)/i);
     if (budgetUsdMatch) {
@@ -141,19 +136,13 @@ function parseRebalanceIntent(input: string): RebalanceIntent {
     } else {
         const budgetEthMatch = input.match(/(\d+(?:\.\d+)?)\s*(?:个)?\s*(?:sepolia\s*)?eth/i);
         const budgetBtcMatch = input.match(/(\d+(?:\.\d+)?)\s*(?:个)?\s*btc/i);
-        if (budgetEthMatch) {
-            budget = { symbol: 'ETH', amount: parseFloat(budgetEthMatch[1]) };
-        } else if (budgetBtcMatch) {
-            budget = { symbol: 'BTC', amount: parseFloat(budgetBtcMatch[1]) };
-        }
+        if (budgetEthMatch) budget = { symbol: 'ETH', amount: parseFloat(budgetEthMatch[1]) };
+        else if (budgetBtcMatch) budget = { symbol: 'BTC', amount: parseFloat(budgetBtcMatch[1]) };
     }
 
-    // 解析约束条件
     const slippageMatch = input.match(/滑点\s*(\d+(?:\.\d+)?)%?|slippage\s*(\d+(?:\.\d+)?)%?/i);
-    const maxSlippageBps = slippageMatch ?
-        Math.round((parseFloat(slippageMatch[1] || slippageMatch[2]) * 100)) : 50;
+    const maxSlippageBps = slippageMatch ? Math.round((parseFloat(slippageMatch[1] || slippageMatch[2]) * 100)) : 50;
 
-    // 解析目标链偏好
     const chainMatches = input.matchAll(/(ethereum|bitcoin|solana|polygon|arbitrum|optimism|base)/gi);
     const targetChains = Array.from(chainMatches, m => m[1].toLowerCase());
 
@@ -161,18 +150,12 @@ function parseRebalanceIntent(input: string): RebalanceIntent {
         type: "rebalance",
         targets,
         budget,
-        constraints: {
-            maxSlippageBps,
-            // 默认允许更多步骤，避免多目标/篮子展开导致容易超限
-            maxTxCount: 12
-        },
-        preferences: {
-            targetChains: targetChains.length > 0 ? targetChains : undefined
-        }
+        constraints: { maxSlippageBps, maxTxCount: 12 },
+        preferences: { targetChains: targetChains.length > 0 ? targetChains : undefined }
     };
 }
 
-function parseSwapIntent(input: string): SwapIntent {
+function parseSwapIntent(input: string): ParsedIntent {
     const amt = Number(input.match(/(\d+\.?\d*)\s*(zeta|eth|btc|usdc)/)?.[1]);
     const from = (input.match(/\d+\.?\d*\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
     const to = (input.match(/to\s*(zeta|eth|btc|usdc)/)?.[1] || input.match(/成\s*(zeta|eth|btc|usdc)/)?.[1] || "").toUpperCase();
@@ -180,17 +163,9 @@ function parseSwapIntent(input: string): SwapIntent {
     const dstChain = input.match(/(到|to)\s*(zetachain|ethereum|bitcoin|solana)/)?.[2];
 
     if (from && to) {
-        return {
-            type: "swap",
-            from,
-            to,
-            amount: isNaN(amt) ? undefined : amt,
-            srcChain,
-            dstChain
-        };
+        return { type: "swap", from, to, amount: isNaN(amt) ? undefined : amt, srcChain, dstChain } as ParsedIntent;
     }
-
-    return { type: "unknown" };
+    return { type: "unknown" } as ParsedIntent;
 }
 
 function parseBalanceIntent(input: string): BalanceIntent {
@@ -201,16 +176,9 @@ function parseBalanceIntent(input: string): BalanceIntent {
 
 function getPreferredChain(symbol: string): string {
     const chainMap: Record<string, string> = {
-        'BTC': 'bitcoin',
-        'ETH': 'ethereum',
-        'USDC': 'ethereum',
-        'USDT': 'ethereum',
-        'SOL': 'solana',
-        'BNB': 'bsc',
-        'MATIC': 'polygon',
-        'ZETA': 'zetachain'
+        'BTC': 'bitcoin', 'ETH': 'ethereum', 'USDC': 'ethereum', 'USDT': 'ethereum',
+        'SOL': 'solana', 'BNB': 'bsc', 'MATIC': 'polygon', 'ZETA': 'zetachain'
     };
-
     return chainMap[symbol] || 'ethereum';
 }
 

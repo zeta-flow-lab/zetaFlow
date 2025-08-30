@@ -141,6 +141,48 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onRebalance, 
     setBusy(true);
 
     try {
+      // 快捷意图：入站/提现（不依赖 AI 意图判定，直接触发工具调用）
+      const textLowerQuick = userMessage.toLowerCase();
+      // 提取形如 "0.05 sepolia eth" 或 "0.05 eth" 的金额
+      const amtMatch = userMessage.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:sepolia\s*)?eth/i);
+      const quickAmount = amtMatch ? amtMatch[1] : '0.5';
+      if (/入站|deposit/.test(textLowerQuick)) {
+        try {
+          setMessages((m) => [...m, { role: "assistant", text: `\n📤 正在发起入站 ${quickAmount} ETH (Sepolia → ZetaChain)...` }]);
+          const res = await aiInboundDeposit({ srcChainId: 11155111, amountEth: quickAmount, planSymbols: ['ETH'], planWeights: [10000] });
+          const srcTx = (res as any).txHash || (res as any).hash;
+          const zTx = (res as any).zevmTxHash;
+          const etherscan = srcTx ? `https://sepolia.etherscan.io/tx/${srcTx}` : '';
+          const zetaExplorer = zTx ? `https://athens.explorer.zetachain.com/tx/${zTx}` : '';
+          setMessages((m) => [...m, { role: "assistant", text: `✅ 入站已广播\n- 源链 Tx: ${srcTx}${etherscan ? `\n  ↳ ${etherscan}` : ''}\n- ZEVM Tx: ${zTx || '等待事件…'}${zetaExplorer ? `\n  ↳ ${zetaExplorer}` : ''}` }]);
+        } catch (e: any) {
+          setMessages((m) => [...m, { role: "assistant", text: `❌ 入站失败：${e?.message || e}` }]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      if (/提现|withdraw/.test(textLowerQuick)) {
+        try {
+          setMessages((m) => [...m, { role: "assistant", text: "\n📥 正在发起半额提现至你的当前钱包地址..." }]);
+          const { BrowserProvider } = await import('ethers');
+          const browser = new BrowserProvider((window as any).ethereum);
+          const signer = await browser.getSigner();
+          const recipient = await signer.getAddress();
+          const res = await aiWithdrawHalfEth({ recipient });
+          const zevmTx = (res as any).txHash || (res as any).hash;
+          const dstTx = (res as any).destinationTxHash;
+          const zetaExplorer = zevmTx ? `https://athens.explorer.zetachain.com/tx/${zevmTx}` : '';
+          const etherscan = dstTx ? `https://sepolia.etherscan.io/tx/${dstTx}` : '';
+          setMessages((m) => [...m, { role: "assistant", text: `✅ 提现已广播\n- ZEVM Tx: ${zevmTx}${zetaExplorer ? `\n  ↳ ${zetaExplorer}` : ''}\n- 目标链 Tx: ${dstTx || '等待 CCTX…'}${etherscan ? `\n  ↳ ${etherscan}` : ''}` }]);
+        } catch (e: any) {
+          setMessages((m) => [...m, { role: "assistant", text: `❌ 提现失败：${e?.message || e}` }]);
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+
       // Check if we should use AI or command parsing
       if (useAI) {
         // 增强的 AI 模式：AI 响应 + 意图检测
@@ -177,23 +219,21 @@ export default function Chat({ i18n, lang, onCreateWallet, onSwap, onRebalance, 
           const textLower = userMessage.toLowerCase();
           if (/入站|deposit/.test(textLower)) {
             try {
-              setMessages((m) => [...m, { role: "assistant", text: "\n📤 正在发起入站 0.01 ETH (Sepolia → ZetaChain)..." }]);
-              const res = await aiInboundDeposit({ srcChainId: 11155111, amountEth: '0.01', planSymbols: ['ETH'], planWeights: [10000] });
-              setMessages((m) => [...m, { role: "assistant", text: `✅ 入站已广播：${JSON.stringify(res)}` }]);
+              setMessages((m) => [...m, { role: "assistant", text: "\n📤 正在发起入站 0.5 ETH (Sepolia → ZetaChain)..." }]);
+              const res = await aiInboundDeposit({ srcChainId: 11155111, amountEth: '0.5', planSymbols: ['ETH'], planWeights: [10000] });
+              setMessages((m) => [...m, { role: "assistant", text: `✅ 入站已广播：${res.txHash || JSON.stringify(res)}` }]);
             } catch (e: any) {
               setMessages((m) => [...m, { role: "assistant", text: `❌ 入站失败：${e?.message || e}` }]);
             }
-          }
-          if (/提现|withdraw/.test(textLower)) {
+          } else if (/提现|withdraw/.test(textLower)) {
             try {
               setMessages((m) => [...m, { role: "assistant", text: "\n📥 正在发起半额提现至你的当前钱包地址..." }]);
-              // 取当前连接的钱包地址作为接收者
               const { BrowserProvider } = await import('ethers');
               const browser = new BrowserProvider((window as any).ethereum);
               const signer = await browser.getSigner();
               const recipient = await signer.getAddress();
               const res = await aiWithdrawHalfEth({ recipient });
-              setMessages((m) => [...m, { role: "assistant", text: `✅ 提现已广播：${JSON.stringify(res)}` }]);
+              setMessages((m) => [...m, { role: "assistant", text: `✅ 提现已广播：${res.txHash || JSON.stringify(res)}` }]);
             } catch (e: any) {
               setMessages((m) => [...m, { role: "assistant", text: `❌ 提现失败：${e?.message || e}` }]);
             }

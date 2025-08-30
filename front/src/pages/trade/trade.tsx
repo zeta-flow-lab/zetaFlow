@@ -12,6 +12,7 @@ import { I18N, type Lang } from "./utils/languageUtils";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Chat from "./components/Chat";
+import InboundPanel from "./components/InboundPanel";
 import { getUniversalAppAddress, getTokenAddress, ERC20_ABI_FRAGMENTS } from "../../config/addresses";
 import { watchUniversalApp, watchGatewayWithdrawals } from "../../lib/watchers";
 import { sendMessage } from "../../lib/universalApp";
@@ -374,6 +375,11 @@ export default function ZetaFlow() {
           onRebalance={handleRebalance}
           onShowToast={(text, icon) => push({ icon: icon || <ArrowLeftRight size={16} />, text })}
         />
+
+        {/* Inbound 面板（开发期可见）*/}
+        <div className="mt-4">
+          <InboundPanel publicClient={publicClient as any} walletClient={walletClient as any} />
+        </div>
         <div className="mt-4 flex justify-end">
           <button
             className="rounded-xl px-3 py-2 text-sm"

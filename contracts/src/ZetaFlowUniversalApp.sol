@@ -48,6 +48,7 @@ contract ZetaFlowUniversalApp is UniversalContract {
     address public owner;
     bool public enforceGatewayCaller = true; // 若为 true，仅允许 Gateway 回调 onCall
     bool public autoWithdrawOnCall = false; // 是否在 onCall 后自动原样出站回源链提交者
+    bool public autoExecuteOnCall = false; // 是否在 onCall 后自动根据 planData 执行资产配置（swap+withdraw）
     IUniswapV2Router02 public dexRouter; // UniswapV2 Router（Athens 上：0x2ca7...）
 
     mapping(bytes32 => PlanState) public plans; // planId => state
@@ -200,6 +201,10 @@ contract ZetaFlowUniversalApp is UniversalContract {
         autoWithdrawOnCall = enabled;
     }
 
+    function setAutoExecuteOnCall(bool enabled) external onlyOwner {
+        autoExecuteOnCall = enabled;
+    }
+
     function setGateway(address gatewayAddress) external onlyOwner {
         require(gatewayAddress != address(0), "GATEWAY_ZERO");
         gateway = IGatewayZEVM(gatewayAddress);
@@ -260,6 +265,26 @@ contract ZetaFlowUniversalApp is UniversalContract {
         // 入站/出站分离：仅记录入站资产与原始计划，由提交者后续主动触发执行
         planDeposits[planId] = PlanDeposit({zrc20: zrc20, amount: amount});
         planPayloads[planId] = message;
+
+        // 可选：自动执行资产配置（入站即执行 swap + withdraw 流程）
+        if (autoExecuteOnCall) {
+            try
+                this._executeRebalancePlan(
+                    planId,
+                    zrc20,
+                    amount,
+                    message,
+                    submitter
+                )
+            {
+                plans[planId].completed = true;
+                emit PlanCompleted(planId, plans[planId].currentStep);
+            } catch Error(string memory reason) {
+                emit PlanFailed(planId, reason);
+            } catch {
+                emit PlanFailed(planId, "AUTO_EXEC_FAILED");
+            }
+        }
     }
 
     /**
